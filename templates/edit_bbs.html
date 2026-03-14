@@ -1,0 +1,17 @@
+<h2>Edit BBS</h2>
+<form method="POST">
+    Engineer Name:
+    <input type="text" name="engineer_name" value="{{ bbs.engineer_name }}"><br><br>
+
+    Location:
+    <input type="text" name="location" value="{{ bbs.location }}"><br><br>
+
+    Status:
+    <select name="status">
+        <option value="Active" {% if bbs.status == "Active" %}selected{% endif %}>Active</option>
+        <option value="Inactive" {% if bbs.status == "Inactive" %}selected{% endif %}>Inactive</option>
+    </select><br><br>
+
+    <button type="submit">Update</button>
+</form>
+

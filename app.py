@@ -3,14 +3,11 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_mail import Mail, Message
 from werkzeug.security import generate_password_hash, check_password_hash
 from functools import wraps
-import os   # ✅ THIS WAS MISSING
+import os
 import re
 
-# ================= LOAD ENV =================
-
+# ================= APP INIT =================
 app = Flask(__name__)
-
-# ================= SECRET KEY =================
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "bbs-secret-key")
 
 # ================= DATABASE CONFIG =================
@@ -28,7 +25,7 @@ app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 db = SQLAlchemy(app)
 
 # ================= MAIL CONFIG =================
-app.config['MAIL_SERVER'] = 'smtp.gmail.com'
+app.config['MAIL_SERVER'] = 'smtp.titan.email'
 app.config['MAIL_PORT'] = 587
 app.config['MAIL_USE_TLS'] = True
 app.config['MAIL_USERNAME'] = os.getenv("MAIL_USERNAME")
@@ -50,6 +47,8 @@ class User(db.Model):
     password = db.Column(db.String(255), nullable=False)
     role = db.Column(db.String(20), default="engineer")
 
+    bbs_entries = db.relationship("BBS", backref="owner", lazy=True)
+
 
 class BBS(db.Model):
     __tablename__ = "bbs"
@@ -61,6 +60,13 @@ class BBS(db.Model):
     length = db.Column(db.Float)
     quantity = db.Column(db.Integer)
     total_weight = db.Column(db.Float)
+
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+
+
+# ================= CREATE TABLES =================
+with app.app_context():
+    db.create_all()
 
 
 # ================= LOGIN REQUIRED =================
@@ -80,87 +86,42 @@ def home():
     return redirect(url_for("login"))
 
 
-# ================= REGISTRATION =================
+# ================= REGISTER =================
 @app.route("/register", methods=["GET", "POST"])
 def register():
-
     if request.method == "POST":
-        try:
-            name = request.form.get("name")
-            email = request.form.get("email")
-            phone = request.form.get("phone")
-            address = request.form.get("address")
-            dob = request.form.get("dob")
-            password = request.form.get("password")
 
-            # Validation
-            if not name or not email or not password:
-                flash("Name, Email and Password are required!", "danger")
-                return redirect(url_for("register"))
+        name = request.form.get("name")
+        email = request.form.get("email")
+        phone = request.form.get("phone")
+        address = request.form.get("address")
+        dob = request.form.get("dob")
+        password = request.form.get("password")
 
-            if not re.match(r"[^@]+@[^@]+\.[^@]+", email):
-                flash("Invalid Email format!", "danger")
-                return redirect(url_for("register"))
-
-            if len(password) < 6:
-                flash("Password must be at least 6 characters!", "danger")
-                return redirect(url_for("register"))
-
-            # Duplicate check
-            existing_user = User.query.filter_by(email=email).first()
-            if existing_user:
-                flash("Email already registered!", "warning")
-                return redirect(url_for("register"))
-
-            hashed_password = generate_password_hash(password)
-
-            new_user = User(
-                name=name,
-                email=email,
-                phone=phone,
-                address=address,
-                dob=dob,
-                password=hashed_password,
-                role="engineer"
-            )
-
-            db.session.add(new_user)
-            db.session.commit()
-
-            # ================= SEND EMAIL =================
-            try:
-                admin_email = os.getenv("ADMIN_EMAIL")
-
-                if admin_email:
-                    msg = Message(
-                        subject="New User Registration - BBS App",
-                        recipients=[admin_email]
-                    )
-
-                    msg.body = f"""
-New User Registered:
-
-Name: {name}
-Email: {email}
-Phone: {phone}
-Address: {address}
-DOB: {dob}
-Role: engineer
-"""
-
-                    mail.send(msg)
-
-            except Exception as mail_error:
-                print("Mail Error:", mail_error)
-
-            flash("Registration Successful! Please Login.", "success")
-            return redirect(url_for("login"))
-
-        except Exception as e:
-            db.session.rollback()
-            flash("Registration Error. Please try again.", "danger")
-            print("Registration Error:", e)
+        if not name or not email or not password:
+            flash("Name, Email and Password required", "danger")
             return redirect(url_for("register"))
+
+        if User.query.filter_by(email=email).first():
+            flash("Email already exists", "warning")
+            return redirect(url_for("register"))
+
+        hashed_password = generate_password_hash(password)
+
+        new_user = User(
+            name=name,
+            email=email,
+            phone=phone,
+            address=address,
+            dob=dob,
+            password=hashed_password
+        )
+
+        db.session.add(new_user)
+        db.session.commit()
+
+        flash("Registration Successful!", "success")
+        return redirect(url_for("login"))
 
     return render_template("register.html")
 
@@ -168,28 +129,20 @@ Role: engineer
 # ================= LOGIN =================
 @app.route("/login", methods=["GET", "POST"])
 def login():
-
     if request.method == "POST":
-        try:
-            email = request.form.get("email")
-            password = request.form.get("password")
 
-            user = User.query.filter_by(email=email).first()
+        email = request.form.get("email")
+        password = request.form.get("password")
 
-            if user and check_password_hash(user.password, password):
-                session["user_id"] = user.id
-                session["user_name"] = user.name
-                session["role"] = user.role
+        user = User.query.filter_by(email=email).first()
 
-                flash("Login Successful!", "success")
-                return redirect(url_for("dashboard"))
-            else:
-                flash("Invalid Email or Password", "danger")
-                return redirect(url_for("login"))
-
-        except Exception as e:
-            flash("Login Error. Please try again.", "danger")
-            print("Login Error:", e)
+        if user and check_password_hash(user.password, password):
+            session["user_id"] = user.id
+            session["user_name"] = user.name
+            session["role"] = user.role
+            return redirect(url_for("dashboard"))
+        else:
+            flash("Invalid credentials", "danger")
             return redirect(url_for("login"))
 
     return render_template("login.html")
@@ -199,7 +152,6 @@ def login():
 @app.route("/logout")
 def logout():
     session.clear()
-    flash("Logged out successfully", "info")
     return redirect(url_for("login"))
 
 
@@ -207,8 +159,7 @@ def logout():
 @app.route("/dashboard")
 @login_required
 def dashboard():
-
-    bbs_list = BBS.query.all()
+    bbs_list = BBS.query.filter_by(user_id=session["user_id"]).all()
     total_weight = sum(b.total_weight or 0 for b in bbs_list)
 
     return render_template(
@@ -218,44 +169,87 @@ def dashboard():
     )
 
 
-# ================= ADD BBS ENTRY =================
+# ================= VIEW ALL BBS =================
+@app.route("/bbs")
+@login_required
+def view_bbs():
+    bbs_list = BBS.query.filter_by(user_id=session["user_id"]).all()
+    return render_template("bbs_list.html", bbs_list=bbs_list)
+
+
+# ================= ADD BBS =================
 @app.route("/add", methods=["GET", "POST"])
 @login_required
 def add_bbs():
-
     if request.method == "POST":
-        try:
-            project_name = request.form["project_name"]
-            element_type = request.form["element_type"]
-            diameter = float(request.form["diameter"])
-            length = float(request.form["length"])
-            quantity = int(request.form["quantity"])
 
-            total_weight = (diameter ** 2) * 0.006165 * length * quantity
+        project_name = request.form["project_name"]
+        element_type = request.form["element_type"]
+        diameter = float(request.form["diameter"])
+        length = float(request.form["length"])
+        quantity = int(request.form["quantity"])
 
-            new_entry = BBS(
-                project_name=project_name,
-                element_type=element_type,
-                diameter=diameter,
-                length=length,
-                quantity=quantity,
-                total_weight=total_weight
-            )
+        total_weight = (diameter ** 2) * 0.006165 * length * quantity
 
-            db.session.add(new_entry)
-            db.session.commit()
+        new_entry = BBS(
+            project_name=project_name,
+            element_type=element_type,
+            diameter=diameter,
+            length=length,
+            quantity=quantity,
+            total_weight=total_weight,
+            user_id=session["user_id"]
+        )
 
-            flash("BBS Entry Added Successfully", "success")
-            return redirect(url_for("dashboard"))
+        db.session.add(new_entry)
+        db.session.commit()
 
-        except Exception as e:
-            db.session.rollback()
-            return f"Error: {str(e)}"
+        return redirect(url_for("view_bbs"))
 
     return render_template("add_bbs.html")
 
 
-# ================= MAIN =================
+# ================= EDIT BBS =================
+@app.route("/edit/<int:id>", methods=["GET", "POST"])
+@login_required
+def edit_bbs(id):
+    entry = BBS.query.get_or_404(id)
+
+    if entry.user_id != session["user_id"]:
+        flash("Unauthorized access", "danger")
+        return redirect(url_for("view_bbs"))
+
+    if request.method == "POST":
+        entry.project_name = request.form["project_name"]
+        entry.element_type = request.form["element_type"]
+        entry.diameter = float(request.form["diameter"])
+        entry.length = float(request.form["length"])
+        entry.quantity = int(request.form["quantity"])
+        entry.total_weight = (entry.diameter ** 2) * 0.006165 * entry.length * entry.quantity
+
+        db.session.commit()
+        return redirect(url_for("view_bbs"))
+
+    return render_template("edit_bbs.html", entry=entry)
+
+
+# ================= DELETE BBS =================
+@app.route("/delete/<int:id>")
+@login_required
+def delete_bbs(id):
+    entry = BBS.query.get_or_404(id)
+
+    if entry.user_id != session["user_id"]:
+        flash("Unauthorized access", "danger")
+        return redirect(url_for("view_bbs"))
+
+    db.session.delete(entry)
+    db.session.commit()
+
+    return redirect(url_for("view_bbs"))
+
+
+# ================= RUN =================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
 

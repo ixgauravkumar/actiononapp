@@ -1,0 +1,27 @@
+<h2>BBS List</h2>
+<a href="/add_bbs">Add New BBS</a>
+<br><br>
+
+<table border="1">
+<tr>
+    <th>ID</th>
+    <th>Engineer</th>
+    <th>Location</th>
+    <th>Status</th>
+    <th>Actions</th>
+</tr>
+
+{% for bbs in bbs_list %}
+<tr>
+    <td>{{ bbs.id }}</td>
+    <td>{{ bbs.engineer_name }}</td>
+    <td>{{ bbs.location }}</td>
+    <td>{{ bbs.status }}</td>
+    <td>
+        <a href="/edit_bbs/{{ bbs.id }}">Edit</a>
+        <a href="/delete_bbs/{{ bbs.id }}">Delete</a>
+    </td>
+</tr>
+{% endfor %}
+</table>
+
