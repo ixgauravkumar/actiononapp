@@ -1,4 +1,4 @@
-name: Docker CI
+name: Docker CI/CD
 
 on:
   push:
@@ -14,19 +14,41 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v3
 
-      - name: Show Files
-        run: ls -la
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
-
       - name: Login DockerHub
         uses: docker/login-action@v2
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Build and Push Image
-        run: |
-          docker build -t ${{ secrets.DOCKER_USERNAME }}/python-bbs-app:latest .
-          docker push ${{ secrets.DOCKER_USERNAME }}/python-bbs-app:latest
+      - name: Build Docker Image
+        run: docker build -t ${{ secrets.DOCKER_USERNAME }}/python-bbs-app:latest .
+
+      - name: Push Docker Image
+        run: docker push ${{ secrets.DOCKER_USERNAME }}/python-bbs-app:latest
+
+      - name: Deploy to Server
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          password: ${{ secrets.SERVER_PASSWORD }}
+          script: |
+            docker pull ${{ secrets.DOCKER_USERNAME }}/python-bbs-app:latest
+
+            docker stop loginbbs-container || true
+            docker rm loginbbs-container || true
+
+            docker run -itd \
+              --name loginbbs-container \
+              --add-host=host.docker.internal:host-gateway \
+              -e DB_USER=flaskuser \
+              -e DB_PASSWORD=flaskpass \
+              -e DB_HOST=host.docker.internal \
+              -e DB_PORT=3306 \
+              -e DB_NAME=login_db \
+              -e MAIL_USERNAME=gauravxkumar3@gmail.com \
+              -e MAIL_PASSWORD=jhgvfqgkprukdfuje \
+              -e ADMIN_EMAIL=gauravxkumar3@gmail.com \
+              -e FLASK_SECRET_KEY=jhgvfqgkprukdfuje \
+              -p 8085:5000 \
+              ${{ secrets.DOCKER_USERNAME }}/python-bbs-app:latest
